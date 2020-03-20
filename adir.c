@@ -1,11 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+
+/* POSIX */
 #include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
 #include <libgen.h>
-#include <limits.h>
-#include <string.h>
 
 /* p9p */
 //#include "acme.h"
@@ -34,6 +36,8 @@ int    nchildren(Node*);
 Node** getchildren(Node*, int);
 int    runeventloop(Tree*);
 int    writetree(FILE*, Tree*);
+Tree*  refreshtree(Tree*);
+
 
 int
 main(int argc, char *argv[])
@@ -56,9 +60,9 @@ main(int argc, char *argv[])
 Node*
 getnode(char* name)
 {
-    Node *node = malloc(sizeof(Node));
-    node->name = name;
-    node->stat = malloc(sizeof(struct stat));
+	Node *node = malloc(sizeof(Node));
+	node->name = name;
+	node->stat = malloc(sizeof(struct stat));
 	if(stat(name, node->stat) != 0)
 	{
 		perror("stat");
@@ -74,15 +78,15 @@ gettree(Node* root, Tree* parent)
 {
 	Tree *tree = malloc(sizeof(Tree));
 	tree->parent = parent;
-    tree->root = root;
+	tree->root = root;
 	if(S_ISDIR(root->stat->st_mode))
 	{
-	    tree->nchildren = nchildren(root);
+		tree->nchildren = nchildren(root);
 		tree->children = getchildren(root, tree->nchildren);
 	}
 	else
 	{
-	    tree->nchildren = 0;
+		tree->nchildren = 0;
 		tree->children = NULL;
 	}
 	return tree;
@@ -100,7 +104,7 @@ nchildren(Node* node)
 	}
 	while(readdir(dir) != NULL)
     	nc++;
-    closedir(dir);	
+	closedir(dir);	
 	return nc;
 }
 
@@ -121,9 +125,9 @@ getchildren(Node *node, int nc)
 		entry = readdir(dir);
 		if(entry == NULL)
 			break; /* Todo: handle properly */
-    	children[i] = getnode(entry->d_name);
-    }
-    closedir(dir);
+	children[i] = getnode(entry->d_name);
+	}
+	closedir(dir);
 	return children;
 }
 
