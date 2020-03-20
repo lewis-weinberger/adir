@@ -10,8 +10,11 @@
 #include <libgen.h>
 
 /* p9p */
-//#include "acme.h"
-//#include "utf.h"
+#include <u.h>
+#include <libc.h>
+#include <thread.h>
+#include <9pclient.h>
+#include <acme.h>
 
 typedef struct Node Node;
 typedef struct Tree Tree;
