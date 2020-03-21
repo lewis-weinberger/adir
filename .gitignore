@@ -2,3 +2,6 @@ acme.h
 utf.h
 *.swp
 *~
+*.o
+*o.*
+adir

@@ -17,94 +17,115 @@
 #include <acme.h>
 
 typedef struct Node Node;
-typedef struct Tree Tree;
+typedef enum Flag Flag;
 
 struct Node
 {
-	char *name;
-	struct stat *stat;
+	char*        name;
+	struct stat* stat;
+	int          nchildren;
+	Node*        parent;
+	Node**       children;
 };
 
-struct Tree 
+enum Flag
 {
-	Tree *parent;
-	Node *root;
-	int  nchildren;
-	Node **children;
+	CHILD = 0,
+	PARENT = 1
 };
 
-Node*  getnode(char*);
-Tree*  gettree(Node*, Tree*);
+Node*  getnode(char*, Node*, Flag);
+void   freenode(Node*);
 int    nchildren(Node*);
-Node** getchildren(Node*, int);
-int    runeventloop(Tree*);
-int    writetree(FILE*, Tree*);
-Tree*  refreshtree(Tree*);
+Node** getchildren(Node*);
+void   writenode(Node*, Win*);
+void   runeventloop(Node*);
+char*  strtrim(char*);
 
-
-int
-main(int argc, char *argv[])
+void
+threadmain(int argc, char *argv[])
 {
 	char cdir[PATH_MAX];
+	Node* tree;
+	
 	if(getcwd(cdir, sizeof(cdir)) == NULL) 
 	{
 		perror("getcwd");
-		return 1;
+		return;
 	}
-	Node *rnode = getnode(cdir);
-	if(rnode == NULL)
-		return 1;	
-	Tree *rtree = gettree(rnode, NULL);
-	if(rtree == NULL)
-		return 1;
-	return runeventloop(rtree);
+	tree = getnode(cdir, NULL, PARENT);
+	if(tree == NULL)
+		return;
+	runeventloop(tree);
+	threadexitsall(NULL);
 }
 
-Node*
-getnode(char* name)
+Node* 
+getnode(char* name, Node* parent, Flag flag)
 {
-	Node *node = malloc(sizeof(Node));
+	Node *node;
+	
+	node = malloc(sizeof(Node));
+	if(node == NULL)
+	{
+		perror("malloc");
+		return NULL;
+	}
+	node->parent = parent;
 	node->name = name;
 	node->stat = malloc(sizeof(struct stat));
-	if(stat(name, node->stat) != 0)
+	if(node->stat == NULL)
+	{
+		perror("malloc");
+		return NULL;
+	}
+	if(stat(node->name, node->stat) != 0)
 	{
 		perror("stat");
 		free(node->stat);
 		free(node);
 		return NULL;
 	}
-	return node;
-}
-
-Tree* 
-gettree(Node* root, Tree* parent)
-{
-	Tree *tree = malloc(sizeof(Tree));
-	tree->parent = parent;
-	tree->root = root;
-	if(S_ISDIR(root->stat->st_mode))
+	if(S_ISDIR(node->stat->st_mode))
 	{
-		tree->nchildren = nchildren(root);
-		tree->children = getchildren(root, tree->nchildren);
+		if(flag)
+		{
+			node->nchildren = nchildren(node);
+			node->children = getchildren(node);
+		}
 	}
 	else
 	{
-		tree->nchildren = 0;
-		tree->children = NULL;
+		node->nchildren = 0;
+		node->children = NULL;
 	}
-	return tree;
+	return node;
+}
+
+void
+freenode(Node* node)
+{
+	Node* top;
+	
+	top = node;
+	while(top->parent != NULL)
+		top = top->parent;
+	/* Todo */
 }
 
 int
 nchildren(Node* node)
 {
-	int nc = 0;
-	DIR *dir = opendir(node->name);
+	int nc;
+	DIR* dir;
+	
+	dir = opendir(node->name);
 	if(dir == NULL)
 	{
 		perror("opendir");
 		return 0;
 	}
+	nc = 0;
 	while(readdir(dir) != NULL)
     	nc++;
 	closedir(dir);	
@@ -112,44 +133,108 @@ nchildren(Node* node)
 }
 
 Node**
-getchildren(Node *node, int nc)
+getchildren(Node* node)
 {
-	Node **children = malloc(nc * sizeof(Node*));
-	struct dirent *entry;
-	DIR *dir = opendir(node->name);
+	Node** children;
+	struct dirent* entry;
+	DIR* dir;
+	int i;
+	
+	children = malloc(node->nchildren * sizeof(Node*));
+	if(children == NULL)
+	{
+		perror("malloc");
+		return NULL;
+	}
+ 	dir = opendir(node->name);
 	if(dir == NULL)
 	{
 		perror("opendir");
 		free(children);
-		return 0;
+		return NULL;
 	}
-	for(int i = 0; i < nc; i++)
+	for(i = 0; i < node->nchildren; i++)
 	{
 		entry = readdir(dir);
 		if(entry == NULL)
-			break; /* Todo: handle properly */
-	children[i] = getnode(entry->d_name);
+			break; /* Todo */
+		children[i] = getnode(entry->d_name, node, CHILD);
 	}
 	closedir(dir);
 	return children;
 }
 
-int
-runeventloop(Tree *tree)
+void 
+writenode(Node* node, Win* win)
 {
-	return writetree(stdout, tree);
+	int i;
+	
+	winprint(win, "body", "%s/\n", basename(node->name));
+	for(i = 0; i < node->nchildren; i++)
+	{
+		if(S_ISDIR(node->children[i]->stat->st_mode))
+			winprint(win, "body", "\t%s/\n", basename(node->children[i]->name));
+		else
+			winprint(win, "body", "\t%s\n", basename(node->children[i]->name));		
+	}
 }
 
-int
-writetree(FILE *file, Tree *tree)
+char*
+strtrim(char* str)
 {
-	printf("%s/\n", basename(tree->root->name));
-	for(int i = 0; i < tree->nchildren; i++)
+	/* Todo */
+	return str;
+}
+
+void
+runeventloop(Node* node)
+{
+	Win* win;
+	Event* ev;
+	Node* current;
+	
+	current = node;
+	win = newwin();
+	winname(win, "+adir");
+	winprint(win, "tag", "Get Win Hide");
+	writenode(current, win);
+	ev = malloc(sizeof(Event));
+	
+	while(winreadevent(win, ev))
 	{
-		if(S_ISDIR(tree->children[i]->stat->st_mode))
-			printf("\t%s/\n", basename(tree->children[i]->name));
-		else
-			printf("\t%s\n", basename(tree->children[i]->name));		
+		switch(ev->c2)
+		{
+			case 'x': /* M2 in tag */
+				if(strcmp(strtrim(ev->text), "Del") == 0)
+				{
+					windel(win, 1);
+					break;
+				} 
+				else if(strcmp(strtrim(ev->text), "Get") == 0)
+				{
+					/* Todo */
+				}
+				else if(strcmp(strtrim(ev->text), "Win") == 0)
+				{
+					/* Todo */
+				}
+				else if(strcmp(strtrim(ev->text), "Hide") == 0)
+				{
+					/* Todo */
+				}
+				else
+					winwriteevent(win, ev);
+					
+			//case 'X': /* M2 in body */
+			
+			//case 'L': /* M3 in body */
+			
+			default:
+				winwriteevent(win, ev);
+		}
 	}
-	return 0;
+	
+	winfree(win);
+	free(ev);
+	freenode(node);
 }

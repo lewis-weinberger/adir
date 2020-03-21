@@ -2,11 +2,8 @@
 
 TARG=adir
 
-OFILES=\
-	adir.$O\
+OFILES=adir.$O
 
-HFILES=\
-	$PLAN9/include/acme.h\
-	$PLAN9/include/utf.h\
+HFILES=$PLAN9/include/acme.h
 
 <$PLAN9/src/mkone

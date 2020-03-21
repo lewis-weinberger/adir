@@ -6,15 +6,15 @@
 
 ## Installation
 
-This application requires an installation of [plan9port](https://github.com/9fans/plan9port), to pull in `libacme` and associated headers. Assuming the `PLAN9` environmental variable points to your plan9 installation, you should be able to compile `adir` with `mk`:
+This application requires an installation of [plan9port](https://github.com/9fans/plan9port), as it piggybacks on various libraries (like `libacme` and `libthread`) and takes advantage of p9p's build files. Assuming the `PLAN9` environmental variable points to your p9p installation, you should be able to compile `adir` with `mk` as follows:
 
 ```
 git clone https://github.com/lewis-weinberger/adir.git
 cd adir
-mk
+mk install
 ```
 
-To remove object files to start afresh, use `mk clean`.
+To install the executable at a custom location, set the `BIN` variable (e.g. `mk install BIN=/usr/local/bin`). To remove object files and start afresh, use `mk clean`.
 
 ## Usage
 
