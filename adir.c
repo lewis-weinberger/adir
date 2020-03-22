@@ -15,32 +15,39 @@
 #include <thread.h>
 #include <9pclient.h>
 #include <acme.h>
+#include <plumb.h>
+
+#define MAX_DEPTH 8 /* Maximum number of unfolded nested directories */
 
 typedef struct Node Node;
-typedef enum Flag Flag;
 
 struct Node
 {
 	char*        name;
 	struct stat* stat;
 	int          nchildren;
+	int          ishidden;   /* Toggle hidden files */
+	int          isfolded;   /* Toggle directory folding */
 	Node*        parent;
 	Node**       children;
 };
 
-enum Flag
+enum
 {
-	CHILD = 0,
-	PARENT = 1
+	CHILD,
+	PARENT
 };
 
-Node*  getnode(char*, Node*, Flag);
-void   freenode(Node*);
+Node*  getnode(char*, Node*, int);
 int    nchildren(Node*);
 Node** getchildren(Node*);
-void   writenode(Node*, Win*);
+int    winclear(Win*);
+void   writenode(Node*, Win*, unsigned int);
 void   runeventloop(Node*);
 char*  strtrim(char*);
+void   refreshnode(Node*);
+void   freenode(Node*);
+Node*  findnode(Node*, Event*);
 
 void
 threadmain(int argc, char *argv[])
@@ -48,44 +55,27 @@ threadmain(int argc, char *argv[])
 	char cdir[PATH_MAX];
 	Node* tree;
 	
-	if(getcwd(cdir, sizeof(cdir)) == NULL) 
-	{
-		perror("getcwd");
-		return;
-	}
+	if(getcwd(cdir, sizeof(cdir)) == NULL)
+		sysfatal("Unable to getcwd()");
 	tree = getnode(cdir, NULL, PARENT);
-	if(tree == NULL)
-		return;
 	runeventloop(tree);
 	threadexitsall(NULL);
 }
 
 Node* 
-getnode(char* name, Node* parent, Flag flag)
+getnode(char* name, Node* parent, int flag)
 {
 	Node *node;
 	
-	node = malloc(sizeof(Node));
-	if(node == NULL)
-	{
-		perror("malloc");
-		return NULL;
-	}
+	node = emalloc(sizeof(Node));
 	node->parent = parent;
 	node->name = name;
-	node->stat = malloc(sizeof(struct stat));
-	if(node->stat == NULL)
-	{
-		perror("malloc");
-		return NULL;
-	}
+	node->ishidden = 0;
+	if(flag)
+		node->isfolded = 0;
+	node->stat = emalloc(sizeof(struct stat));
 	if(stat(node->name, node->stat) != 0)
-	{
-		perror("stat");
-		free(node->stat);
-		free(node);
-		return NULL;
-	}
+		sysfatal("Unable to stat()");		
 	if(S_ISDIR(node->stat->st_mode))
 	{
 		if(flag)
@@ -100,17 +90,6 @@ getnode(char* name, Node* parent, Flag flag)
 		node->children = NULL;
 	}
 	return node;
-}
-
-void
-freenode(Node* node)
-{
-	Node* top;
-	
-	top = node;
-	while(top->parent != NULL)
-		top = top->parent;
-	/* Todo */
 }
 
 int
@@ -140,19 +119,10 @@ getchildren(Node* node)
 	DIR* dir;
 	int i;
 	
-	children = malloc(node->nchildren * sizeof(Node*));
-	if(children == NULL)
-	{
-		perror("malloc");
-		return NULL;
-	}
+	children = emalloc(node->nchildren * sizeof(Node*));
  	dir = opendir(node->name);
 	if(dir == NULL)
-	{
-		perror("opendir");
-		free(children);
-		return NULL;
-	}
+		sysfatal("Unable to opendir()");
 	for(i = 0; i < node->nchildren; i++)
 	{
 		entry = readdir(dir);
@@ -164,26 +134,87 @@ getchildren(Node* node)
 	return children;
 }
 
-void 
-writenode(Node* node, Win* win)
+int
+winclear(Win* win)
 {
-	int i;
+	int n;
 	
-	winprint(win, "body", "%s/\n", basename(node->name));
-	for(i = 0; i < node->nchildren; i++)
-	{
-		if(S_ISDIR(node->children[i]->stat->st_mode))
-			winprint(win, "body", "\t%s/\n", basename(node->children[i]->name));
-		else
-			winprint(win, "body", "\t%s\n", basename(node->children[i]->name));		
-	}
+	n = winaddr(win, ",");
+	if(n <= 0)
+		return -1;
+	return winwrite(win, "data", NULL, 0);
 }
 
+void 
+writenode(Node* node, Win* win, unsigned int offset)
+{
+	int i, j;
+	
+	if(S_ISDIR(node->stat->st_mode))
+	{
+		winprint(win, "body", "%s/\n", basename(node->name));
+		if(!node->isfolded)
+		{
+			for(i = 0; i < node->nchildren; i++)
+			{
+				if(!(node->ishidden && node->children[i]->name[0] == '.'))
+				{
+					if(offset <= MAX_DEPTH) /* avoid stack overflow */
+					{
+						j = offset;
+						while(j)
+						{
+							winprint(win, "body", "\t");
+							j--;
+						}
+						writenode(node->children[i], win, offset + 1);
+					}
+				}
+			}
+		}
+	}
+	else
+		winprint(win, "body", "%s\n", basename(node->name));
+}
+
+/* Trim whitespace in place           */
+/* https://stackoverflow.com/a/122721 */
 char*
 strtrim(char* str)
 {
-	/* Todo */
+	char* end;
+	
+	while(isspace((unsigned char)*str))
+		str++;
+	if(*str == 0)
+		return str;
+	end = str + strlen(str) - 1;
+	while(end > str && isspace((unsigned char)*end))
+		end--;
+	end[1] = '\0';
 	return str;
+}
+
+void
+freenode(Node *node)
+{
+	/* Todo */
+}
+
+void
+refreshnode(Node* node)
+{
+	/* Todo */
+}
+
+Node*
+findnode(Node* root, Event* ev)
+{
+	Node* node;
+	
+	/* Todo */
+	node = root;
+	return node;
 }
 
 void
@@ -191,17 +222,19 @@ runeventloop(Node* node)
 {
 	Win* win;
 	Event* ev;
-	Node* current;
+	Node* loc;
 	
-	current = node;
 	win = newwin();
 	winname(win, "+adir");
 	winprint(win, "tag", "Get Win Hide");
-	writenode(current, win);
-	ev = malloc(sizeof(Event));
+	writenode(node, win, 1);
+	ev = emalloc(sizeof(Event));
 	
-	while(winreadevent(win, ev))
+	for(;;)
 	{
+		if(winreadevent(win, ev) <= 0)
+			break;
+			
 		switch(ev->c2)
 		{
 			case 'x': /* M2 in tag */
@@ -212,23 +245,27 @@ runeventloop(Node* node)
 				} 
 				else if(strcmp(strtrim(ev->text), "Get") == 0)
 				{
-					/* Todo */
+					loc = findnode(node, ev);
+					refreshnode(loc);
 				}
 				else if(strcmp(strtrim(ev->text), "Win") == 0)
 				{
+					loc = findnode(node, ev);
 					/* Todo */
 				}
 				else if(strcmp(strtrim(ev->text), "Hide") == 0)
 				{
-					/* Todo */
+					node->ishidden = 1 - node->ishidden;
+					winclear(win);
+					writenode(node, win, 1);
 				}
 				else
 					winwriteevent(win, ev);
-					
+						
 			//case 'X': /* M2 in body */
-			
+				
 			//case 'L': /* M3 in body */
-			
+				
 			default:
 				winwriteevent(win, ev);
 		}
@@ -236,5 +273,4 @@ runeventloop(Node* node)
 	
 	winfree(win);
 	free(ev);
-	freenode(node);
 }

@@ -1,12 +1,12 @@
 # adir
 
-> Simple directory tree for Plan 9's Acme editor
+> Simple directory viewer for Plan 9's Acme editor
 
 ![screenshot](./screenshot.png)
 
 ## Installation
 
-This application requires an installation of [plan9port](https://github.com/9fans/plan9port), as it piggybacks on various libraries (like `libacme` and `libthread`) and takes advantage of p9p's build files. Assuming the `PLAN9` environmental variable points to your p9p installation, you should be able to compile `adir` with `mk` as follows:
+This application requires an installation of [plan9port](https://github.com/9fans/plan9port), as it piggybacks on various libraries (like `[libacme](https://9fans.github.io/plan9port/man/man3/acme.html)` and `[libthread](https://9fans.github.io/plan9port/man/man3/thread.html)`) and takes advantage of p9p's build files. Assuming the `PLAN9` environmental variable points to your p9p installation, you should be able to compile `adir` with `mk` as follows:
 
 ```
 git clone https://github.com/lewis-weinberger/adir.git
