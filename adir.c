@@ -28,6 +28,7 @@ struct Node
 	int          nchildren;
 	int          ishidden;   /* Toggle hidden files */
 	int          isfolded;   /* Toggle directory folding */
+	int          noff;       /* Character offset when drawn on window */
 	Node*        parent;
 	Node**       children;
 };
@@ -38,16 +39,20 @@ enum
 	PARENT
 };
 
+char* plan9;
+char* acmeshell;
+
 Node*  getnode(char*, Node*, int);
 int    nchildren(Node*);
 Node** getchildren(Node*);
 int    winclear(Win*);
-void   writenode(Node*, Win*, unsigned int);
+int    writenode(Node*, Win*, int, int);
 void   runeventloop(Node*);
 char*  strtrim(char*);
-void   refreshnode(Node*);
+Node*  refreshnode(Node*);
 void   freenode(Node*);
-Node*  findnode(Node*, Event*);
+int    findnode(Node*, Node**, int);
+void   runcommand(char*, char*, ...);
 
 void
 threadmain(int argc, char *argv[])
@@ -55,6 +60,10 @@ threadmain(int argc, char *argv[])
 	char cdir[PATH_MAX];
 	Node* tree;
 	
+	if((plan9 = getenv("PLAN9")) == NULL)
+		sysfatal("PLAN9 not defined");
+	if((acmeshell = getenv("acmeshell")) == NULL)
+		acmeshell = "rc";
 	if(getcwd(cdir, sizeof(cdir)) == NULL)
 		sysfatal("Unable to getcwd()");
 	tree = getnode(cdir, NULL, PARENT);
@@ -100,10 +109,7 @@ nchildren(Node* node)
 	
 	dir = opendir(node->name);
 	if(dir == NULL)
-	{
-		perror("opendir");
-		return 0;
-	}
+		sysfatal("Unable to opendir()");
 	nc = 0;
 	while(readdir(dir) != NULL)
     	nc++;
@@ -145,36 +151,38 @@ winclear(Win* win)
 	return winwrite(win, "data", NULL, 0);
 }
 
-void 
-writenode(Node* node, Win* win, unsigned int offset)
+int 
+writenode(Node* node, Win* win, int depth, int noff)
 {
 	int i, j;
 	
+	node->noff = noff;
 	if(S_ISDIR(node->stat->st_mode))
 	{
-		winprint(win, "body", "%s/\n", basename(node->name));
+		noff += winprint(win, "body", "%s/\n", basename(node->name));
 		if(!node->isfolded)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
 				if(!(node->ishidden && node->children[i]->name[0] == '.'))
 				{
-					if(offset <= MAX_DEPTH) /* avoid stack overflow */
+					if(depth <= MAX_DEPTH) /* avoid recursive stack overflow */
 					{
-						j = offset;
+						j = depth;
 						while(j)
 						{
-							winprint(win, "body", "\t");
+							noff += winprint(win, "body", "\t");
 							j--;
 						}
-						writenode(node->children[i], win, offset + 1);
+						noff += writenode(node->children[i], win, depth + 1, noff);
 					}
 				}
 			}
 		}
 	}
 	else
-		winprint(win, "body", "%s\n", basename(node->name));
+		noff += winprint(win, "body", "%s\n", basename(node->name));
+	return noff;
 }
 
 /* Trim whitespace in place           */
@@ -196,25 +204,88 @@ strtrim(char* str)
 }
 
 void
-freenode(Node *node)
-{
-	/* Todo */
-}
-
-void
-refreshnode(Node* node)
+freenode(Node* node)
 {
 	/* Todo */
 }
 
 Node*
-findnode(Node* root, Event* ev)
+refreshnode(Node* old)
 {
-	Node* node;
+	Node* new;
 	
-	/* Todo */
-	node = root;
-	return node;
+	new = getnode(old->name, NULL, PARENT);
+	freenode(old);
+	return new;
+}
+
+int
+findnode(Node* node, Node** found, int noff)
+{
+	int i;
+	
+	/* TODO FIX THIS */
+	if(node->noff == noff)
+	{
+		*found = node;
+		return 1;
+	}
+	else
+	{
+		if(S_ISDIR(node->stat->st_mode))
+		{
+			for(i = 0; i < node->nchildren; i++)
+			{
+				if(findnode(node->children[i], found, noff))
+					return 1;
+			}
+		}
+	}
+	return 0; /* Failed to find matching node at offset */
+}
+
+/* Like sysrun but runs commands in the desired directory and */
+/* respects the acmeshell environment variable,               */
+/* Note: doesn't return first KB of output from command.      */
+void runcommand(char* dir, char* fmt, ...)
+{
+	char*   args[4];
+	int     fd[3], p[2];
+	char*   cmd;
+	va_list arg;
+
+#undef pipe
+	if(pipe(p) < 0)
+		sysfatal("pipe: %r");
+	fd[0] = open("/dev/null", OREAD);
+	fd[1] = p[1];
+	fd[2] = dup(p[1], -1);
+
+	va_start(arg, fmt);
+	cmd = evsmprint(fmt, arg);
+	va_end(arg);
+	
+	args[0] = acmeshell;
+	args[1] = "-c";
+	args[2] = cmd;
+	args[3] = NULL;
+	threadspawnd(fd, args[0], args, dir);
+}
+
+void
+loctoq(Event* ev, int* q)
+{
+	char* s1;
+	char* s2;
+	
+	s1 = ev->loc;
+	while(*s1 != ':')
+		s1++;
+	s2 = s1;
+	while(*s2 != ',')
+		s2++;
+	q[0] = atoi(&s1[2]);
+	q[1] = atoi(&s2[2]);
 }
 
 void
@@ -223,11 +294,12 @@ runeventloop(Node* node)
 	Win* win;
 	Event* ev;
 	Node* loc;
+	int q[2];
 	
 	win = newwin();
-	winname(win, "+adir");
+	winname(win, "%s/+adir", node->name);
 	winprint(win, "tag", "Get Win Hide");
-	writenode(node, win, 1);
+	writenode(node, win, 1, 0);
 	ev = emalloc(sizeof(Event));
 	
 	for(;;)
@@ -240,29 +312,34 @@ runeventloop(Node* node)
 			case 'x': /* M2 in tag */
 				if(strcmp(strtrim(ev->text), "Del") == 0)
 				{
-					windel(win, 1);
-					break;
+					goto Exit;
 				} 
 				else if(strcmp(strtrim(ev->text), "Get") == 0)
 				{
-					loc = findnode(node, ev);
-					refreshnode(loc);
+					node = refreshnode(node);
 				}
 				else if(strcmp(strtrim(ev->text), "Win") == 0)
 				{
-					loc = findnode(node, ev);
-					/* Todo */
+					loctoq(ev, q);
+					if(findnode(node, &loc, q[0])) /* M2+M1 chording */
+						runcommand(loc->name, "%s/bin/win", plan9);
+					else
+						runcommand(node->name, "%s/bin/win", plan9);				
 				}
 				else if(strcmp(strtrim(ev->text), "Hide") == 0)
 				{
 					node->ishidden = 1 - node->ishidden;
 					winclear(win);
-					writenode(node, win, 1);
+					writenode(node, win, 1, 0);
 				}
 				else
 					winwriteevent(win, ev);
+				break;
 						
-			//case 'X': /* M2 in body */
+			case 'X': /* M2 in body */
+				if(findnode(node, &loc, ev->q0))
+					winprint(win, "body", "%s\n", loc->name); /* TODO */
+				break;
 				
 			//case 'L': /* M3 in body */
 				
@@ -271,6 +348,9 @@ runeventloop(Node* node)
 		}
 	}
 	
-	winfree(win);
-	free(ev);
+	Exit:
+		windel(win, 1);
+		winfree(win);
+		free(ev);
+		freenode(node);
 }

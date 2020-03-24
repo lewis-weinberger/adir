@@ -29,10 +29,11 @@ Note that symbolic links are followed, and handled based on their target. The tr
 
 The tree's window tag has some additional commands:
 
-- `Get` to refresh the tree if directory contents have changed.
-- `Win` to open a shell window at the location under the cursor.
+- `Get` to refresh the contents of the directory tree.
+- `Win` to open a shell window.
 - `Hide` to toggle whether hidden files are displayed in the tree.
 
+By default the `Win` command will open a shell at the root of the tree. To open the shell in a sub-directory, first place your cursor on the sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Note that both `Get` and `Hide` will redraw the directory tree.
 
 ## Alternatives
 
