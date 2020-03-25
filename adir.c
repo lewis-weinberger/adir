@@ -84,14 +84,14 @@ getnode(char* name, Node* parent, int flag)
 	node = emalloc(sizeof(Node));
 	if(parent)
 	{
-		node->name = emalloc(strlen(name)+strlen(parent->name) + 1);
+		node->name = emalloc((strlen(name)+strlen(parent->name) + 3)*sizeof(char));
 		strcpy(node->name, parent->name);
 		strcat(node->name, "/");
 		strcat(node->name, name);
 	}
 	else
 	{
-		node->name = emalloc(strlen(name));
+		node->name = emalloc((strlen(name)+1)*sizeof(char));
 		strcpy(node->name, name);
 	}
 	node->parent = parent;
@@ -106,16 +106,16 @@ getnode(char* name, Node* parent, int flag)
 	if(fstat(fd, node->stat) < 0)
 		sysfatal("Unable to fstat()");
 	close(fd);
-	node->nchildren = 0;
-	node->children = NULL;	
-	if(S_ISDIR(node->stat->st_mode))
+	if(S_ISDIR(node->stat->st_mode) && flag)
 	{
-		if(flag)
-		{
-			node->nchildren = nchildren(node);
-			node->children = getchildren(node);
-			node->order = getorder(node);
-		}
+		node->nchildren = nchildren(node);
+		node->children = getchildren(node);
+		node->order = getorder(node);
+	}
+	else
+	{
+		node->nchildren = -1;
+		node->children = NULL;
 	}
 	node->noff = -1;
 	return node;
@@ -199,7 +199,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 	node->noff = n;
 	if(S_ISDIR(node->stat->st_mode))
 	{
-		n += winprint(win, "body", "%s/ %d\n", basename(node->name), node->noff);
+		n += winprint(win, "body", "%s/\n", basename(node->name));
 		if(!node->isfolded)
 		{
 			for(i = 0; i < node->nchildren; i++)
@@ -213,13 +213,13 @@ writenode(Node* node, Win* win, int depth, int noff)
 						n += winprint(win, "body", "\t");
 						j--;
 					}
-					n += writenode(node->children[k], win, depth + 1, n);
+					n = writenode(node->children[k], win, depth + 1, n);
 				}
 			}
 		}
 	}
 	else
-		n += winprint(win, "body", "%s %d\n", basename(node->name), node->noff);
+		n += winprint(win, "body", "%s\n", basename(node->name));
 	return n;
 }
 
@@ -401,12 +401,26 @@ runeventloop(Node* node)
 				break;
 						
 			case 'X': /* M2 in body */
-				if(findnode(node, &loc, ev->q0))
-					winprint(win, "body", "%s\n", loc->name); /* TODO */
-				winprint(win, "body", "%d\n", ev->q0);
+				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
+				{
+					node = refreshnode(loc);
+					redraw(win, node);
+				}
 				break;
 				
-			//case 'L': /* M3 in body */
+			case 'L': /* M3 in body */
+				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
+				{
+					loc->isfolded = 1 - loc->isfolded;
+					if(loc->nchildren < 0)
+					{
+						loc->nchildren = nchildren(loc);
+						loc->children = getchildren(loc);
+						loc->order = getorder(loc);
+					}
+					redraw(win, node);
+				}
+				break;
 				
 			default:
 				winwriteevent(win, ev);
