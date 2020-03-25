@@ -31,6 +31,7 @@ struct Node
 	int          noff;       /* Character offset when drawn on window */
 	Node*        parent;
 	Node**       children;
+	int*         order;      /* Alphabetical ordering indices */
 };
 
 enum
@@ -53,6 +54,9 @@ Node*  refreshnode(Node*);
 void   freenode(Node*);
 int    findnode(Node*, Node**, int);
 void   runcommand(char*, char*, ...);
+void   redraw(Win*, Node*);
+void   togglehidden(Node*);
+int*   getorder(Node*);
 
 void
 threadmain(int argc, char *argv[])
@@ -93,28 +97,27 @@ getnode(char* name, Node* parent, int flag)
 	node->parent = parent;
 	node->ishidden = 0;
 	if(flag)
-		node->isfolded = 0;
+		node->isfolded = 0; /* parents start unfolded */
 	else
-		node->isfolded = 1;
+		node->isfolded = 1; /* children start folded */
 	node->stat = emalloc(sizeof(struct stat));
 	if((fd = open(node->name, O_RDONLY)) < 0)
 		sysfatal("Unable to open()");
 	if(fstat(fd, node->stat) < 0)
 		sysfatal("Unable to fstat()");
-	close(fd);		
+	close(fd);
+	node->nchildren = 0;
+	node->children = NULL;	
 	if(S_ISDIR(node->stat->st_mode))
 	{
 		if(flag)
 		{
 			node->nchildren = nchildren(node);
 			node->children = getchildren(node);
+			node->order = getorder(node);
 		}
 	}
-	else
-	{
-		node->nchildren = 0;
-		node->children = NULL;
-	}
+	node->noff = -1;
 	return node;
 }
 
@@ -129,7 +132,7 @@ nchildren(Node* node)
 		sysfatal("Unable to opendir()");
 	nc = 0;
 	while(readdir(dir) != NULL)
-    	nc++;
+		nc++;
 	closedir(dir);	
 	return nc;
 }
@@ -157,6 +160,18 @@ getchildren(Node* node)
 	return children;
 }
 
+int*
+getorder(Node* node)
+{
+	int* order;
+	int i;
+	
+	order = emalloc(node->nchildren * sizeof(int));
+	for(i = 0; i < node->nchildren; i++)
+		order[i] = i;
+	return order;
+}
+
 int
 winclear(Win* win)
 {
@@ -168,10 +183,17 @@ winclear(Win* win)
 	return winwrite(win, "data", NULL, 0);
 }
 
+void
+redraw(Win* win, Node* node)
+{
+	winclear(win);
+	writenode(node, win, 1, 0);
+}
+
 int 
 writenode(Node* node, Win* win, int depth, int noff)
 {
-	int i, j, n;
+	int i, j, k, n;
 	
 	n = noff;
 	node->noff = n;
@@ -182,18 +204,16 @@ writenode(Node* node, Win* win, int depth, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				if(!(node->ishidden && node->children[i]->name[0] == '.'))
+				k = node->order[i];
+				if(!(node->ishidden && basename(node->children[k]->name)[0] == '.') && depth <= MAX_DEPTH)
 				{
-					if(depth <= MAX_DEPTH) /* avoid recursive stack overflow */
+					j = depth;
+					while(j)
 					{
-						j = depth;
-						while(j)
-						{
-							n += winprint(win, "body", "\t");
-							j--;
-						}
-						n += writenode(node->children[i], win, depth + 1, n);
+						n += winprint(win, "body", "\t");
+						j--;
 					}
+					n += writenode(node->children[k], win, depth + 1, n);
 				}
 			}
 		}
@@ -242,7 +262,6 @@ findnode(Node* node, Node** found, int noff)
 {
 	int i;
 	
-	/* TODO FIX THIS */
 	if(node->noff == noff)
 	{
 		*found = node;
@@ -260,6 +279,19 @@ findnode(Node* node, Node** found, int noff)
 		}
 	}
 	return 0; /* Failed to find matching node at offset */
+}
+
+void
+togglehidden(Node* node)
+{
+	int i;
+	
+	node->ishidden = 1 - node->ishidden;
+	if(S_ISDIR(node->stat->st_mode))
+	{
+		for(i = 0; i < node->nchildren; i++)
+			togglehidden(node->children[i]);
+	}
 }
 
 /* Like sysrun but runs commands in the desired directory and */
@@ -288,7 +320,6 @@ void runcommand(char* dir, char* fmt, ...)
 	args[2] = cmd;
 	args[3] = NULL;
 	threadspawnd(fd, args[0], args, dir);
-	free(cmd);
 }
 
 void
@@ -335,21 +366,35 @@ runeventloop(Node* node)
 				} 
 				else if(strcmp(strtrim(ev->text), "Get") == 0)
 				{
-					node = refreshnode(node);
+					if(ev->flag&8) /* M2+M1 chording */
+					{
+						loctoq(ev, q);
+						if(findnode(node, &loc, q[0]))
+							node = refreshnode(loc);
+						else
+							node = refreshnode(node);
+					}
+					else
+						node = refreshnode(node);
+					redraw(win, node);
 				}
 				else if(strcmp(strtrim(ev->text), "Win") == 0)
 				{
-					loctoq(ev, q);
-					if(findnode(node, &loc, q[0])) /* M2+M1 chording */
-						runcommand(loc->name, "%s/bin/win", plan9);
+					if(ev->flag&8) /* M2+M1 chording */
+					{
+						loctoq(ev, q);
+						if(findnode(node, &loc, q[0]))
+							runcommand(loc->name, "%s/bin/win", plan9);
+						else
+							runcommand(node->name, "%s/bin/win", plan9);
+					}
 					else
-						runcommand(node->name, "%s/bin/win", plan9);				
+						runcommand(node->name, "%s/bin/win", plan9);
 				}
 				else if(strcmp(strtrim(ev->text), "Hide") == 0)
 				{
-					node->ishidden = 1 - node->ishidden;
-					winclear(win);
-					writenode(node, win, 1, 0);
+					togglehidden(node);
+					redraw(win, node);
 				}
 				else
 					winwriteevent(win, ev);
@@ -365,9 +410,9 @@ runeventloop(Node* node)
 				
 			default:
 				winwriteevent(win, ev);
-		}
+		}	
 	}
-	
+		
 	Exit:
 		windel(win, 1);
 		winfree(win);
