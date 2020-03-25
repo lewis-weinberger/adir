@@ -75,16 +75,33 @@ Node*
 getnode(char* name, Node* parent, int flag)
 {
 	Node *node;
+	int fd;
 	
 	node = emalloc(sizeof(Node));
+	if(parent)
+	{
+		node->name = emalloc(strlen(name)+strlen(parent->name) + 1);
+		strcpy(node->name, parent->name);
+		strcat(node->name, "/");
+		strcat(node->name, name);
+	}
+	else
+	{
+		node->name = emalloc(strlen(name));
+		strcpy(node->name, name);
+	}
 	node->parent = parent;
-	node->name = name;
 	node->ishidden = 0;
 	if(flag)
 		node->isfolded = 0;
+	else
+		node->isfolded = 1;
 	node->stat = emalloc(sizeof(struct stat));
-	if(stat(node->name, node->stat) != 0)
-		sysfatal("Unable to stat()");		
+	if((fd = open(node->name, O_RDONLY)) < 0)
+		sysfatal("Unable to open()");
+	if(fstat(fd, node->stat) < 0)
+		sysfatal("Unable to fstat()");
+	close(fd);		
 	if(S_ISDIR(node->stat->st_mode))
 	{
 		if(flag)
@@ -154,12 +171,13 @@ winclear(Win* win)
 int 
 writenode(Node* node, Win* win, int depth, int noff)
 {
-	int i, j;
+	int i, j, n;
 	
-	node->noff = noff;
+	n = noff;
+	node->noff = n;
 	if(S_ISDIR(node->stat->st_mode))
 	{
-		noff += winprint(win, "body", "%s/\n", basename(node->name));
+		n += winprint(win, "body", "%s/ %d\n", basename(node->name), node->noff);
 		if(!node->isfolded)
 		{
 			for(i = 0; i < node->nchildren; i++)
@@ -171,18 +189,18 @@ writenode(Node* node, Win* win, int depth, int noff)
 						j = depth;
 						while(j)
 						{
-							noff += winprint(win, "body", "\t");
+							n += winprint(win, "body", "\t");
 							j--;
 						}
-						noff += writenode(node->children[i], win, depth + 1, noff);
+						n += writenode(node->children[i], win, depth + 1, n);
 					}
 				}
 			}
 		}
 	}
 	else
-		noff += winprint(win, "body", "%s\n", basename(node->name));
-	return noff;
+		n += winprint(win, "body", "%s %d\n", basename(node->name), node->noff);
+	return n;
 }
 
 /* Trim whitespace in place           */
@@ -270,6 +288,7 @@ void runcommand(char* dir, char* fmt, ...)
 	args[2] = cmd;
 	args[3] = NULL;
 	threadspawnd(fd, args[0], args, dir);
+	free(cmd);
 }
 
 void
@@ -339,6 +358,7 @@ runeventloop(Node* node)
 			case 'X': /* M2 in body */
 				if(findnode(node, &loc, ev->q0))
 					winprint(win, "body", "%s\n", loc->name); /* TODO */
+				winprint(win, "body", "%d\n", ev->q0);
 				break;
 				
 			//case 'L': /* M3 in body */
