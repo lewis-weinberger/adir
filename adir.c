@@ -29,7 +29,6 @@ struct Node
 	int          noff;       /* Character offset when drawn on window */
 	Node*        parent;
 	Node**       children;
-	int*         order;      /* Alphabetical ordering indices */
 };
 
 enum
@@ -58,7 +57,6 @@ int    findnode(Node*, Node**, int);
 void   runcommand(char*, char*, ...);
 void   redraw(Win*, Node*);
 void   togglehidden(Node*);
-int*   getorder(Node*);
 int    alphabetise(const void*, const void*);
 
 /* Libthread's alternative entry to main */
@@ -114,13 +112,11 @@ getnode(char* name, Node* parent, int flag)
 	{
 		node->nchildren = nchildren(node);
 		node->children = getchildren(node);
-		node->order = getorder(node);
 	}
 	else
 	{
 		node->nchildren = -1;
 		node->children = NULL;
-		node->order = NULL;
 	}
 	node->noff = -1;
 	return node;
@@ -176,19 +172,6 @@ alphabetise(const void *a, const void *b)
 	return strcmp(basename(x->name), basename(y->name));
 }
 
-int*
-getorder(Node* node)
-{
-	int* order;
-	int i;
-	
-	/* TODO */
-	order = emalloc(node->nchildren * sizeof(int));
-	for(i = 0; i < node->nchildren; i++)
-		order[i] = i;
-	return order;
-}
-
 int
 winclear(Win* win)
 {
@@ -214,7 +197,7 @@ redraw(Win* win, Node* node)
 int 
 writenode(Node* node, Win* win, int depth, int noff)
 {
-	int i, j, k, n;
+	int i, j, n;
 	
 	n = noff;
 	node->noff = n;
@@ -225,8 +208,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				k = node->order[i];
-				if(!(node->ishidden && basename(node->children[k]->name)[0] == '.') && depth <= MAX_DEPTH)
+				if(!(node->ishidden && basename(node->children[i]->name)[0] == '.') && depth <= MAX_DEPTH)
 				{
 					j = depth;
 					while(j)
@@ -234,7 +216,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 						n += winprint(win, "body", "\t");
 						j--;
 					}
-					n = writenode(node->children[k], win, depth + 1, n);
+					n = writenode(node->children[i], win, depth + 1, n);
 				}
 			}
 		}
@@ -275,7 +257,6 @@ freenode(Node* node)
 			freenode(node->children[i]);
 		}
 		free(node->children);
-		free(node->order);
 	}
 	free(node->stat);
 	free(node);
@@ -465,7 +446,6 @@ runeventloop(Node* node)
 					{
 						loc->nchildren = nchildren(loc);
 						loc->children = getchildren(loc);
-						loc->order = getorder(loc);
 					}
 					redraw(win, node);
 				}
