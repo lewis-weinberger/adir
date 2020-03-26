@@ -17,8 +17,6 @@
 #include <acme.h>
 #include <plumb.h>
 
-#define MAX_DEPTH 8 /* Maximum number of unfolded nested directories */
-
 typedef struct Node Node;
 
 struct Node
@@ -36,10 +34,14 @@ struct Node
 
 enum
 {
-	CHILD,
-	PARENT
+	MAX_DEPTH = 8, /* Maximum number of unfolded nested directories */
+	CHILD = 0,
+	PARENT = 1,
+	FALSE = 0,
+	TRUE = 1,
 };
 
+/* Environment variables */
 char* plan9;
 char* acmeshell;
 
@@ -57,7 +59,9 @@ void   runcommand(char*, char*, ...);
 void   redraw(Win*, Node*);
 void   togglehidden(Node*);
 int*   getorder(Node*);
+int    alphabetise(const void*, const void*);
 
+/* Libthread's alternative entry to main */
 void
 threadmain(int argc, char *argv[])
 {
@@ -95,18 +99,18 @@ getnode(char* name, Node* parent, int flag)
 		strcpy(node->name, name);
 	}
 	node->parent = parent;
-	node->ishidden = 0;
+	node->ishidden = FALSE;
 	if(flag)
-		node->isfolded = 0; /* parents start unfolded */
+		node->isfolded = FALSE; /* parents start unfolded */
 	else
-		node->isfolded = 1; /* children start folded */
+		node->isfolded = TRUE; /* children start folded */
 	node->stat = emalloc(sizeof(struct stat));
 	if((fd = open(node->name, O_RDONLY)) < 0)
 		sysfatal("Unable to open()");
 	if(fstat(fd, node->stat) < 0)
 		sysfatal("Unable to fstat()");
 	close(fd);
-	if(S_ISDIR(node->stat->st_mode) && flag)
+	if(S_ISDIR(node->stat->st_mode) && flag) /* Lazy load children when needed */
 	{
 		node->nchildren = nchildren(node);
 		node->children = getchildren(node);
@@ -116,6 +120,7 @@ getnode(char* name, Node* parent, int flag)
 	{
 		node->nchildren = -1;
 		node->children = NULL;
+		node->order = NULL;
 	}
 	node->noff = -1;
 	return node;
@@ -157,7 +162,18 @@ getchildren(Node* node)
 		children[i] = getnode(entry->d_name, node, CHILD);
 	}
 	closedir(dir);
+	qsort(children, node->nchildren, sizeof(Node*), alphabetise);
 	return children;
+}
+
+int
+alphabetise(const void *a, const void *b)
+{
+	Node *x, *y;
+
+	x = *(Node**)a;
+	y = *(Node**)b;
+	return strcmp(basename(x->name), basename(y->name));
 }
 
 int*
@@ -166,6 +182,7 @@ getorder(Node* node)
 	int* order;
 	int i;
 	
+	/* TODO */
 	order = emalloc(node->nchildren * sizeof(int));
 	for(i = 0; i < node->nchildren; i++)
 		order[i] = i;
@@ -183,11 +200,15 @@ winclear(Win* win)
 	return winwrite(win, "data", NULL, 0);
 }
 
+/* Redraw directory tree, maintaining cursor position */
 void
 redraw(Win* win, Node* node)
 {
+	unsigned int q0, q1;
+	q0 = winreadaddr(win, &q1);
 	winclear(win);
 	writenode(node, win, 1, 0);
+	winaddr(win, "#%d,#%d", q0, q1);
 }
 
 int 
@@ -244,14 +265,27 @@ strtrim(char* str)
 void
 freenode(Node* node)
 {
-	/* Todo */
+	int i;
+	
+	free(node->name);
+	if(S_ISDIR(node->stat->st_mode))
+	{
+		for(i = 0; i < node->nchildren; i++)
+		{
+			freenode(node->children[i]);
+		}
+		free(node->children);
+		free(node->order);
+	}
+	free(node->stat);
+	free(node);
 }
 
 Node*
 refreshnode(Node* old)
 {
 	Node* new;
-	
+
 	new = getnode(old->name, NULL, PARENT);
 	freenode(old);
 	return new;
@@ -261,11 +295,11 @@ int
 findnode(Node* node, Node** found, int noff)
 {
 	int i;
-	
+
 	if(node->noff == noff)
 	{
 		*found = node;
-		return 1;
+		return TRUE;
 	}
 	else
 	{
@@ -273,20 +307,23 @@ findnode(Node* node, Node** found, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				if(findnode(node->children[i], found, noff))
-					return 1;
+				if(!(node->ishidden && basename(node->children[i]->name)[0] == '.'))
+				{
+					if(findnode(node->children[i], found, noff))
+						return TRUE;
+				}
 			}
 		}
 	}
-	return 0; /* Failed to find matching node at offset */
+	return FALSE; /* Failed to find matching node at offset */
 }
 
 void
 togglehidden(Node* node)
 {
 	int i;
-	
-	node->ishidden = 1 - node->ishidden;
+
+	node->ishidden = !node->ishidden;
 	if(S_ISDIR(node->stat->st_mode))
 	{
 		for(i = 0; i < node->nchildren; i++)
@@ -343,8 +380,8 @@ runeventloop(Node* node)
 {
 	Win* win;
 	Event* ev;
-	Node* loc;
-	int q[2];
+	Node *loc, *nodep;
+	int q[2], i;
 	
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
@@ -370,9 +407,19 @@ runeventloop(Node* node)
 					{
 						loctoq(ev, q);
 						if(findnode(node, &loc, q[0]))
-							node = refreshnode(loc);
-						else
-							node = refreshnode(node);
+						{
+							if(loc->parent == NULL)
+								node = refreshnode(loc);
+							else
+							{
+								nodep = loc->parent;
+								for(i = 0; i < nodep->nchildren; i++)
+								{
+									if(nodep->children[i] == loc)
+										nodep->children[i] = refreshnode(loc);
+								}
+							}
+						}
 					}
 					else
 						node = refreshnode(node);
@@ -385,8 +432,6 @@ runeventloop(Node* node)
 						loctoq(ev, q);
 						if(findnode(node, &loc, q[0]))
 							runcommand(loc->name, "%s/bin/win", plan9);
-						else
-							runcommand(node->name, "%s/bin/win", plan9);
 					}
 					else
 						runcommand(node->name, "%s/bin/win", plan9);
@@ -401,17 +446,21 @@ runeventloop(Node* node)
 				break;
 						
 			case 'X': /* M2 in body */
+				/* Change root directory */
 				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
 				{
-					node = refreshnode(loc);
+					nodep = node;
+					node = getnode(loc->name, NULL, PARENT);
+					freenode(nodep);
 					redraw(win, node);
 				}
 				break;
 				
 			case 'L': /* M3 in body */
+				/* Fold/unfold directories */
 				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
 				{
-					loc->isfolded = 1 - loc->isfolded;
+					loc->isfolded = !loc->isfolded;
 					if(loc->nchildren < 0)
 					{
 						loc->nchildren = nchildren(loc);
