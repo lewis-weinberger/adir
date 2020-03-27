@@ -314,7 +314,7 @@ togglehidden(Node* node)
 }
 
 /* Like sysrun but runs commands in the desired directory and */
-/* respects the acmeshell environment variable,               */
+/* respects the acmeshell environment variable.               */
 /* Note: doesn't return first KB of output from command.      */
 void runcommand(char* dir, char* fmt, ...)
 {
@@ -359,6 +359,23 @@ loctoq(Event* ev, int* q)
 		s2++;
 	q[0] = atoi(&s1[2]);
 	q[1] = atoi(&s2[2]);
+}
+
+void
+sendtoplumber(char* s)
+{
+	Plumbmsg msg;
+	int fid;
+	
+	/* TODO: get this working */
+	fid = plumbopen("send", OWRITE);
+	msg.src = "adir";
+	msg.dst = "";
+	msg.wdir = "/";
+	msg.type = "text";
+	msg.data = s;
+	plumbsend(fid, &msg);
+	close(fid);
 }
 
 void
@@ -458,7 +475,7 @@ runeventloop(Node* node)
 						}
 					}
 					else
-						;/* Todo Plumbing */
+						sendtoplumber(loc->name);
 				}
 				break;
 				
@@ -477,7 +494,7 @@ runeventloop(Node* node)
 						redraw(win, node);
 					}
 					else
-						;/* Todo Plumbing */
+						sendtoplumber(loc->name);
 				}
 				break;
 				
