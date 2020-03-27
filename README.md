@@ -14,7 +14,9 @@ cd adir
 mk install
 ```
 
-To install the executable at a custom location, set the `BIN` variable (e.g. `mk install BIN=/usr/local/bin`). To remove object files and start afresh, use `mk clean`.
+To install the executable at a custom location, set the `BIN` variable (e.g. `mk install BIN=/usr/local/bin`). To remove object files and start afresh, use `mk clean`. 
+
+To use it within Acme, make sure `adir` is installed somewhere on your `PATH`.
 
 ## Usage
 
@@ -31,15 +33,16 @@ The tree's window tag has some additional commands:
 
 - `Get` to refresh the contents of the directory tree.
 - `Win` to open a shell window.
+- `New` to open a new `adir` window.
 - `Hide` to toggle whether hidden files are displayed in the tree.
 
-By default the `Win` and `Get` commands will work at the root of the tree, however M2+M1 chording can apply them to a sub-directory. For example to open a shell somewhere else, first place your cursor on the desired sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Similarly to refresh only a specific sub-directory's contents, use the M2+M1 chord on the `Get` command.
+By default the `Get`, `Win` and `New` commands will work at the root of the tree, however M2+M1 chording can apply them to a sub-directory. For example to open a shell somewhere else, first place your cursor on the desired sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Similarly for refreshing a sub-directory with `Get` or opening a new `adir` window on a sub-directory with `New`.
 
 Note that both `Get` and `Hide` will redraw the entire directory tree. `adir` will also respect the `acmeshell` environment variable when using the `Win` command.
 
 If hidden files are shown, the `../` entry can be used to open (or change to) the parent directory.
 
-**Note**: files are listed alphabetically. To do this, `adir` assumes filenames are UTF-8 encoded.
+**Note**: `adir` treats file names internally as byte strings, and does a simplistic byte-by-byte comparison to order them. This means UTF-8 encoded file names will be sorted alphabetically, however the lack of normalisation and canonical decomposition may result in a different ordering of non-ASCII characters (such as accented ones).
 
 ## Alternatives
 

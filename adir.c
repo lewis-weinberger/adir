@@ -26,7 +26,7 @@ struct Node
 	int          nchildren;
 	int          ishidden;   /* Toggle hidden files */
 	int          isfolded;   /* Toggle directory folding */
-	int          noff;       /* Character offset when drawn on window */
+	int          noff;       /* Byte offset when drawn on window */
 	Node*        parent;
 	Node**       children;
 };
@@ -170,9 +170,9 @@ alphabetise(const void *a, const void *b)
 
 	x = *(Node**)a;
 	y = *(Node**)b;
-	/* Note: by definition, UTF-8 strings are correctly */
-	/* ordered by strcmp(), however accented characters */
-	/* may appear out of order.                         */
+	/* Note: by definition, UTF-8 strings are correctly    */
+	/* ordered by strcmp(). However without normalisation, */
+	/* accented characters may appear out of order.        */
 	return strcmp(basename(x->name), basename(y->name));
 }
 
@@ -214,12 +214,8 @@ writenode(Node* node, Win* win, int depth, int noff)
 			{
 				if(!(node->ishidden && basename(node->children[i]->name)[0] == '.') && depth <= MAX_DEPTH)
 				{
-					j = depth;
-					while(j)
-					{
+					for(j = depth; j > 0; j--)
 						n += winprint(win, "body", "\t");
-						j--;
-					}
 					n = writenode(node->children[i], win, depth + 1, n);
 				}
 			}
@@ -276,6 +272,7 @@ refreshnode(Node* old)
 	return new;
 }
 
+/* Find the node with a given byte offset when drawn on the window */
 int
 findnode(Node* node, Node** found, int noff)
 {
@@ -344,6 +341,10 @@ void runcommand(char* dir, char* fmt, ...)
 	threadspawnd(fd, args[0], args, dir);
 }
 
+/* Find the byte offset from an event loc address.   */
+/* Note: Acme addresses are actually rune offsets,   */
+/* but winprint etc. return byte offsets. This may   */
+/* cause issues with multi-byte runes in file names! */
 void
 loctoq(Event* ev, int* q)
 {
@@ -367,10 +368,11 @@ runeventloop(Node* node)
 	Event* ev;
 	Node *loc, *nodep;
 	int q[2], i;
+	char path[PATH_MAX];
 	
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
-	winprint(win, "tag", "Get Win Hide");
+	winprint(win, "tag", "Get Win New Hide");
 	writenode(node, win, 1, 0);
 	ev = emalloc(sizeof(Event));
 	
@@ -421,6 +423,17 @@ runeventloop(Node* node)
 					else
 						runcommand(node->name, "%s/bin/win", plan9);
 				}
+				else if(strcmp(strtrim(ev->text), "New") == 0)
+				{
+					if(ev->flag&8) /* M2+M1 chording */
+					{
+						loctoq(ev, q);
+						if(findnode(node, &loc, q[0]))
+							runcommand(loc->name, "adir");
+					}
+					else
+						runcommand(node->name, "adir");
+				}
 				else if(strcmp(strtrim(ev->text), "Hide") == 0)
 				{
 					togglehidden(node);
@@ -431,27 +444,40 @@ runeventloop(Node* node)
 				break;
 						
 			case 'X': /* M2 in body */
-				/* Change root directory */
-				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
+				if(findnode(node, &loc, ev->q0))
 				{
-					nodep = node;
-					node = getnode(loc->name, NULL, PARENT);
-					freenode(nodep);
-					redraw(win, node);
+					/* Change root directory */
+					if(S_ISDIR(loc->stat->st_mode))
+					{
+						nodep = node;
+						if(realpath(loc->name, path) != NULL)
+						{
+							node = getnode(path, NULL, PARENT);
+							freenode(nodep);
+							redraw(win, node);
+						}
+					}
+					else
+						;/* Todo Plumbing */
 				}
 				break;
 				
 			case 'L': /* M3 in body */
-				/* Fold/unfold directories */
-				if(findnode(node, &loc, ev->q0) && S_ISDIR(loc->stat->st_mode))
+				if(findnode(node, &loc, ev->q0))
 				{
-					loc->isfolded = !loc->isfolded;
-					if(loc->nchildren < 0)
+					/* Fold/unfold directories */
+					if(S_ISDIR(loc->stat->st_mode))
 					{
-						loc->nchildren = nchildren(loc);
-						loc->children = getchildren(loc);
+						loc->isfolded = !loc->isfolded;
+						if(loc->nchildren < 0)
+						{
+							loc->nchildren = nchildren(loc);
+							loc->children = getchildren(loc);
+						}
+						redraw(win, node);
 					}
-					redraw(win, node);
+					else
+						;/* Todo Plumbing */
 				}
 				break;
 				
