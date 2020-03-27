@@ -162,6 +162,7 @@ getchildren(Node* node)
 	return children;
 }
 
+/* Order file names alphabetically */
 int
 alphabetise(const void *a, const void *b)
 {
@@ -169,6 +170,9 @@ alphabetise(const void *a, const void *b)
 
 	x = *(Node**)a;
 	y = *(Node**)b;
+	/* Note: by definition, UTF-8 strings are correctly */
+	/* ordered by strcmp(), however accented characters */
+	/* may appear out of order.                         */
 	return strcmp(basename(x->name), basename(y->name));
 }
 
