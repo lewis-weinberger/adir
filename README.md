@@ -39,7 +39,7 @@ Note that both `Get` and `Hide` will redraw the entire directory tree. `adir` wi
 
 If hidden files are shown, the `../` entry can be used to open (or change to) the parent directory.
 
-**DISCLAIMER**: `adir` treats file names at a character level, i.e. assuming ASCII encoding. This *may* cause unexpected behaviour with Unicode file names.
+**Note**: files are listed alphabetically. To do this, `adir` assumes filenames are UTF-8 encoded.
 
 ## Alternatives
 
