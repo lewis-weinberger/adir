@@ -25,16 +25,17 @@ M2 on `adir` in a window's tag to open its directory context as a tree, in a new
 To navigate the tree use:
 
 - M3 to unfold/fold directories into sub-trees, and open files with the plumber as usual in Acme. 
-- M2 to run executables (in the current root of the tree), or to set a sub-directory as the root of the tree.
+- M2 to run executables, or to set a sub-directory as the root of the tree.
 
-Note that symbolic links are followed, and handled based on their target.
+Note that symbolic links are followed, and handled based on their target. Acme can only run executables that are in its `PATH`, so you may need to use the `Full` command (see below) first. Commands will be run in the currently shown parent directory.
 
-The tree's window tag has some additional commands:
+The tree's window tag has some additional built-in commands:
 
 - `Get` to refresh the contents of the directory tree.
 - `Win` to open a shell window.
 - `New` to open a new `adir` window.
 - `Hide` to toggle whether hidden files are displayed in the tree.
+- `Full` to toggle showing the absolute paths of files.
 
 By default the `Get`, `Win` and `New` commands will work at the root of the tree, however M2+M1 chording can apply them to a sub-directory. For example to open a shell somewhere else, first place your cursor on the desired sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Similarly for refreshing a sub-directory with `Get` or opening a new `adir` window on a sub-directory with `New`.
 
@@ -46,7 +47,7 @@ If hidden files are shown, the `../` entry can be used to open (or change to) th
 
 ## Alternatives
 
-This was mostly an exercise in understanding how to interface with Acme under the hood. This was inspired by some similar projects written in Go:
+This was mostly an exercise in understanding how to interface with Acme under the hood. `adir` was inspired by some similar projects written in Go:
 
 - [acme-corp](https://github.com/sminez/acme-corp)
 - [xplor](https://bitbucket.org/mpl/xplor)

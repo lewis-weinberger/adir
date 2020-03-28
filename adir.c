@@ -26,6 +26,7 @@ struct Node
 	int          nchildren;
 	int          ishidden;   /* Toggle hidden files */
 	int          isfolded;   /* Toggle directory folding */
+	int          isfull;     /* Toggle showing absolute paths */
 	int          noff;       /* Byte offset when drawn on window */
 	Node*        parent;
 	Node**       children;
@@ -41,9 +42,11 @@ enum
 };
 
 /* Environment variables */
+char* path;
 char* plan9;
 char* acmeshell;
 
+void   initenv(char*);
 Node*  getnode(char*, Node*, int);
 int    nchildren(Node*);
 Node** getchildren(Node*);
@@ -63,18 +66,36 @@ int    alphabetise(const void*, const void*);
 void
 threadmain(int argc, char *argv[])
 {
-	char cdir[PATH_MAX];
+	char cwd[PATH_MAX];
 	Node* tree;
+	
+	if(getcwd(cwd, sizeof(cwd)) == NULL)
+		sysfatal("Unable to getcwd()");	
+	initenv(cwd);
+	tree = getnode(cwd, NULL, PARENT);
+	runeventloop(tree);
+	threadexitsall(NULL);
+}
+
+/* Get and set needed environment variables */
+void
+initenv(char *cwd)
+{
+	char* s;
 	
 	if((plan9 = getenv("PLAN9")) == NULL)
 		sysfatal("PLAN9 not defined");
 	if((acmeshell = getenv("acmeshell")) == NULL)
 		acmeshell = "rc";
-	if(getcwd(cdir, sizeof(cdir)) == NULL)
-		sysfatal("Unable to getcwd()");
-	tree = getnode(cdir, NULL, PARENT);
-	runeventloop(tree);
-	threadexitsall(NULL);
+	if((path = getenv("PATH")) == NULL)
+		sysfatal("PLAN9 not defined");
+	s = emalloc((strlen(cwd) + strlen(path) + 2) * sizeof(char));
+	strcpy(s, path);
+	strcat(s, ":");
+	strcat(s, cwd);
+	if((setenv("PATH", s, TRUE)) < 0)
+		sysfatal("Unable to set PATH");
+	free(s);
 }
 
 Node* 
@@ -102,6 +123,7 @@ getnode(char* name, Node* parent, int flag)
 		node->isfolded = FALSE; /* parents start unfolded */
 	else
 		node->isfolded = TRUE; /* children start folded */
+	node->isfull = FALSE;
 	node->stat = emalloc(sizeof(struct stat));
 	if((fd = open(node->name, O_RDONLY)) < 0)
 		sysfatal("Unable to open()");
@@ -202,12 +224,17 @@ int
 writenode(Node* node, Win* win, int depth, int noff)
 {
 	int i, j, n;
-	
+	char* s;
+
+	if(node->isfull)
+		s = node->name;
+	else
+		s = basename(node->name);
 	n = noff;
 	node->noff = n;
 	if(S_ISDIR(node->stat->st_mode))
 	{
-		n += winprint(win, "body", "%s/\n", basename(node->name));
+		n += winprint(win, "body", "%s/\n", s);
 		if(!node->isfolded)
 		{
 			for(i = 0; i < node->nchildren; i++)
@@ -222,7 +249,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 		}
 	}
 	else
-		n += winprint(win, "body", "%s\n", basename(node->name));
+		n += winprint(win, "body", "%s\n", s);
 	return n;
 }
 
@@ -313,6 +340,19 @@ togglehidden(Node* node)
 	}
 }
 
+void
+togglefull(Node* node)
+{
+	int i;
+
+	node->isfull = !node->isfull;
+	if(S_ISDIR(node->stat->st_mode))
+	{
+		for(i = 0; i < node->nchildren; i++)
+			togglefull(node->children[i]);
+	}
+}
+
 /* Like sysrun but runs commands in the desired directory and */
 /* respects the acmeshell environment variable.               */
 /* Note: doesn't return first KB of output from command.      */
@@ -362,23 +402,6 @@ loctoq(Event* ev, int* q)
 }
 
 void
-sendtoplumber(char* s)
-{
-	Plumbmsg msg;
-	int fid;
-	
-	/* TODO: get this working */
-	fid = plumbopen("send", OWRITE);
-	msg.src = "adir";
-	msg.dst = "";
-	msg.wdir = "/";
-	msg.type = "text";
-	msg.data = s;
-	plumbsend(fid, &msg);
-	close(fid);
-}
-
-void
 runeventloop(Node* node)
 {
 	Win* win;
@@ -389,7 +412,7 @@ runeventloop(Node* node)
 	
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
-	winprint(win, "tag", "Get Win New Hide");
+	winprint(win, "tag", "Get Win New Hide Full");
 	writenode(node, win, 1, 0);
 	ev = emalloc(sizeof(Event));
 	
@@ -456,6 +479,11 @@ runeventloop(Node* node)
 					togglehidden(node);
 					redraw(win, node);
 				}
+				else if(strcmp(strtrim(ev->text), "Full") == 0)
+				{
+					togglefull(node);
+					redraw(win, node);
+				}
 				else
 					winwriteevent(win, ev);
 				break;
@@ -472,10 +500,11 @@ runeventloop(Node* node)
 							node = getnode(path, NULL, PARENT);
 							freenode(nodep);
 							redraw(win, node);
+							winname(win, "%s/+adir", node->name);
 						}
 					}
 					else
-						sendtoplumber(loc->name);
+						winwriteevent(win, ev);
 				}
 				break;
 				
@@ -494,7 +523,7 @@ runeventloop(Node* node)
 						redraw(win, node);
 					}
 					else
-						sendtoplumber(loc->name);
+						winwriteevent(win, ev);
 				}
 				break;
 				
