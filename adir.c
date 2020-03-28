@@ -15,7 +15,6 @@
 #include <thread.h>
 #include <9pclient.h>
 #include <acme.h>
-#include <plumb.h>
 
 typedef struct Node Node;
 
