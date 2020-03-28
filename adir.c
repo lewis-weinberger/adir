@@ -57,7 +57,7 @@ Node*  refreshnode(Node*);
 void   freenode(Node*);
 int    findnode(Node*, Node**, int);
 void   runcommand(char*, char*, ...);
-void   redraw(Win*, Node*);
+void   redraw(Win*, Node*, int);
 void   togglehidden(Node*);
 int    alphabetise(const void*, const void*);
 
@@ -208,15 +208,14 @@ winclear(Win* win)
 	return winwrite(win, "data", NULL, 0);
 }
 
-/* Redraw directory tree, maintaining cursor position */
+/* Redraw directory tree, placing cursor at desired offset */
 void
-redraw(Win* win, Node* node)
+redraw(Win* win, Node* node, int offset)
 {
-	unsigned int q0, q1;
-	q0 = winreadaddr(win, &q1);
 	winclear(win);
 	writenode(node, win, 1, 0);
-	winaddr(win, "#%d,#%d", q0, q1);
+	winaddr(win, "#%d", offset);
+	winctl(win, "dot=addr\nshow\n");
 }
 
 int 
@@ -412,7 +411,7 @@ runeventloop(Node* node)
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
 	winprint(win, "tag", "Get Win New Hide Full");
-	writenode(node, win, 1, 0);
+	redraw(win, node, 0);
 	ev = emalloc(sizeof(Event));
 	
 	for(;;)
@@ -446,10 +445,13 @@ runeventloop(Node* node)
 								}
 							}
 						}
+						redraw(win, node, loc->noff);
 					}
 					else
+					{
 						node = refreshnode(node);
-					redraw(win, node);
+						redraw(win, node, 0);
+					}
 				}
 				else if(strcmp(strtrim(ev->text), "Win") == 0)
 				{
@@ -476,12 +478,12 @@ runeventloop(Node* node)
 				else if(strcmp(strtrim(ev->text), "Hide") == 0)
 				{
 					togglehidden(node);
-					redraw(win, node);
+					redraw(win, node, 0);
 				}
 				else if(strcmp(strtrim(ev->text), "Full") == 0)
 				{
 					togglefull(node);
-					redraw(win, node);
+					redraw(win, node, 0);
 				}
 				else
 					winwriteevent(win, ev);
@@ -498,7 +500,7 @@ runeventloop(Node* node)
 						{
 							node = getnode(path, NULL, PARENT);
 							freenode(nodep);
-							redraw(win, node);
+							redraw(win, node, loc->noff);
 							winname(win, "%s/+adir", node->name);
 						}
 					}
@@ -519,10 +521,14 @@ runeventloop(Node* node)
 							loc->nchildren = nchildren(loc);
 							loc->children = getchildren(loc);
 						}
-						redraw(win, node);
+						redraw(win, node, loc->noff);
 					}
 					else
+					{
+						winname(win, "%s/+adir", loc->parent->name);
 						winwriteevent(win, ev);
+						winname(win, "%s/+adir", node->name);
+					}
 				}
 				break;
 				
