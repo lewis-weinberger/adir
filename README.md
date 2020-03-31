@@ -39,7 +39,7 @@ The tree's window tag has some additional built-in commands:
 
 By default the `Get`, `Win` and `New` commands will work at the root of the tree, however M2+M1 chording can apply them to a sub-directory. For example to open a shell somewhere else, first place your cursor on the desired sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Similarly for refreshing a sub-directory with `Get` or opening a new `adir` window on a sub-directory with `New`.
 
-Note that both `Get`, `Hide` and `Full` will redraw the entire directory tree. `adir` will also respect the `acmeshell` environment variable when using the `Win` command.
+Note that `Get`, `Hide` and `Full` will redraw the entire directory tree. `adir` will also respect the `acmeshell` environment variable when using the `Win` command.
 
 If hidden files are shown, the `../` entry can be used to open (or change to) the parent directory.
 
