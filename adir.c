@@ -59,7 +59,10 @@ int    findnode(Node*, Node**, int);
 void   runcommand(char*, char*, ...);
 void   redraw(Win*, Node*, int);
 void   togglehidden(Node*);
+void   togglefull(Node*);
 int    alphabetise(const void*, const void*);
+void   loctoq(Event*, int*);
+
 
 /* Libthread's alternative entry to main */
 void
@@ -406,7 +409,7 @@ runeventloop(Node* node)
 	Event* ev;
 	Node *loc, *nodep;
 	int q[2], i;
-	char path[PATH_MAX];
+	char fpath[PATH_MAX];
 	
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
@@ -496,9 +499,9 @@ runeventloop(Node* node)
 					if(S_ISDIR(loc->stat->st_mode))
 					{
 						nodep = node;
-						if(realpath(loc->name, path) != NULL)
+						if(realpath(loc->name, fpath) != NULL)
 						{
-							node = getnode(path, NULL, PARENT);
+							node = getnode(fpath, NULL, PARENT);
 							freenode(nodep);
 							redraw(win, node, loc->noff);
 							winname(win, "%s/+adir", node->name);
@@ -528,6 +531,8 @@ runeventloop(Node* node)
 						winname(win, "%s/+adir", loc->parent->name);
 						winwriteevent(win, ev);
 						winname(win, "%s/+adir", node->name);
+						/* Todo: figure out why this isn't working... */
+						/* probably an issue with synchronisation */
 					}
 				}
 				break;
