@@ -218,7 +218,7 @@ redraw(Win* win, Node* node, int offset)
 	winclear(win);
 	writenode(node, win, 1, 0);
 	winaddr(win, "#%d", offset);
-	winctl(win, "dot=addr\nshow\n");
+	winctl(win, "dot=addr\nshow\nclean\n");
 }
 
 int 
