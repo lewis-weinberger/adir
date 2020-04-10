@@ -1,12 +1,12 @@
 # adir
 
-> Simple directory viewer for Plan 9's Acme editor
+> Simple client directory viewer for Plan 9's Acme editor
 
 ![screenshot](./screenshot.png)
 
 ## Installation
 
-This application requires an installation of [plan9port](https://github.com/9fans/plan9port), as it piggybacks on various libraries (in particular [`libacme`](https://9fans.github.io/plan9port/man/man3/acme.html)) and takes advantage of p9p's build files. Assuming the `PLAN9` environmental variable points to your p9p installation, you should be able to compile `adir` with `mk` as follows:
+This client requires an installation of [plan9port](https://github.com/9fans/plan9port), as it piggybacks on various libraries (in particular [`libacme`](https://9fans.github.io/plan9port/man/man3/acme.html)) and takes advantage of p9p's build files. Assuming the `PLAN9` environmental variable points to your p9p installation, you should be able to compile `adir` with `mk` as follows:
 
 ```
 git clone https://github.com/lewis-weinberger/adir.git
@@ -36,6 +36,7 @@ The tree's window tag has some additional built-in commands:
 - `New` to open a new `adir` window.
 - `Hide` to toggle whether hidden files are displayed in the tree.
 - `Full` to toggle showing the absolute paths of files.
+- `Parent` to move the root to the parent directory.
 
 By default the `Get`, `Win` and `New` commands will work at the root of the tree, however M2+M1 chording can apply them to a sub-directory. For example to open a shell somewhere else, first place your cursor on the desired sub-directory in the tree, then use the M2+M1 chord on the `Win` command in the tag. Similarly for refreshing a sub-directory with `Get` or opening a new `adir` window on a sub-directory with `New`.
 

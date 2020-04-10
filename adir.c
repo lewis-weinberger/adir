@@ -6,6 +6,7 @@
 /* POSIX */
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <dirent.h>
 #include <libgen.h>
 
@@ -62,6 +63,9 @@ void   togglehidden(Node*);
 void   togglefull(Node*);
 int    alphabetise(const void*, const void*);
 void   loctoq(Event*, int*);
+int    canopen(struct stat*);
+char*  getparentname(Node*);
+char*  getwinname(Win*);
 
 
 /* Libthread's alternative entry to main */
@@ -92,27 +96,44 @@ initenv(char *cwd)
 	if((path = getenv("PATH")) == NULL)
 		sysfatal("PLAN9 not defined");
 	s = emalloc((strlen(cwd) + strlen(path) + 2) * sizeof(char));
-	strcpy(s, path);
-	strcat(s, ":");
-	strcat(s, cwd);
+	sprintf(s, "%s:%s", path, cwd);
 	if((setenv("PATH", s, TRUE)) < 0)
 		sysfatal("Unable to set PATH");
 	free(s);
+}
+
+int
+canopen(struct stat *s)
+{
+	uid_t uid;
+	gid_t gid;
+	
+	uid = getuid();
+	gid = getgid();
+	
+	if(S_ISDIR(s->st_mode))
+	{
+		if(s->st_uid == uid)
+			return (s->st_mode & S_IXUSR);
+		else if(s->st_gid == gid)
+			return (s->st_mode & S_IXGRP);
+		else
+			return (s->st_mode & S_IXOTH);
+	}
+	else
+		return FALSE;
 }
 
 Node* 
 getnode(char* name, Node* parent, int flag)
 {
 	Node *node;
-	int fd;
 	
 	node = emalloc(sizeof(Node));
 	if(parent)
 	{
 		node->name = emalloc((strlen(name)+strlen(parent->name) + 3)*sizeof(char));
-		strcpy(node->name, parent->name);
-		strcat(node->name, "/");
-		strcat(node->name, name);
+		sprintf(node->name, "%s/%s", parent->name, name);
 	}
 	else
 	{
@@ -127,12 +148,9 @@ getnode(char* name, Node* parent, int flag)
 		node->isfolded = TRUE; /* children start folded */
 	node->isfull = FALSE;
 	node->stat = emalloc(sizeof(struct stat));
-	if((fd = open(node->name, O_RDONLY)) < 0)
-		sysfatal("Unable to open()");
-	if(fstat(fd, node->stat) < 0)
-		sysfatal("Unable to fstat()");
-	close(fd);
-	if(S_ISDIR(node->stat->st_mode) && flag) /* Lazy load children when needed */
+	if(stat(node->name, node->stat) < 0)
+		sysfatal("Unable to stat: %s", node->name);
+	if(canopen(node->stat) && flag) /* Lazy load children when needed */
 	{
 		node->nchildren = nchildren(node);
 		node->children = getchildren(node);
@@ -233,7 +251,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 		s = basename(node->name);
 	n = noff;
 	node->noff = n;
-	if(S_ISDIR(node->stat->st_mode))
+	if(canopen(node->stat))
 	{
 		n += winprint(win, "body", "%s/\n", s);
 		if(!node->isfolded)
@@ -278,7 +296,7 @@ freenode(Node* node)
 	int i;
 	
 	free(node->name);
-	if(S_ISDIR(node->stat->st_mode))
+	if(node->nchildren > 0)
 	{
 		for(i = 0; i < node->nchildren; i++)
 		{
@@ -313,7 +331,7 @@ findnode(Node* node, Node** found, int noff)
 	}
 	else
 	{
-		if(S_ISDIR(node->stat->st_mode))
+		if(canopen(node->stat))
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
@@ -334,7 +352,7 @@ togglehidden(Node* node)
 	int i;
 
 	node->ishidden = !node->ishidden;
-	if(S_ISDIR(node->stat->st_mode))
+	if(canopen(node->stat))
 	{
 		for(i = 0; i < node->nchildren; i++)
 			togglehidden(node->children[i]);
@@ -347,7 +365,7 @@ togglefull(Node* node)
 	int i;
 
 	node->isfull = !node->isfull;
-	if(S_ISDIR(node->stat->st_mode))
+	if(canopen(node->stat))
 	{
 		for(i = 0; i < node->nchildren; i++)
 			togglefull(node->children[i]);
@@ -402,6 +420,33 @@ loctoq(Event* ev, int* q)
 	q[1] = atoi(&s2[2]);
 }
 
+char*
+getparentname(Node *node)
+{
+	char fpath[PATH_MAX], *s;
+	
+	sprintf(fpath, "%s/..", node->name);
+	s = emalloc(sizeof(fpath));
+	return realpath(fpath, s);
+}
+
+char*
+getwinname(Win* win)
+{
+	char *name, *s;
+	
+	winseek(win, "tag", 0, 0);
+	s = winmread(win, "tag");
+	name = emalloc(sizeof(s));
+	if(sscanf(s, "%s/+adir %*s", name) <= 0)
+	{
+		free(name);
+		name = NULL;
+	}
+	free(s);
+	return name;
+}
+
 void
 runeventloop(Node* node)
 {
@@ -409,11 +454,11 @@ runeventloop(Node* node)
 	Event* ev;
 	Node *loc, *nodep;
 	int q[2], i;
-	char fpath[PATH_MAX];
+	char fpath[PATH_MAX], *s;
 	
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
-	winprint(win, "tag", "Get Win New Hide Full");
+	winprint(win, "tag", "Get Win New Hide Full Parent");
 	redraw(win, node, 0);
 	ev = emalloc(sizeof(Event));
 	
@@ -488,6 +533,17 @@ runeventloop(Node* node)
 					togglefull(node);
 					redraw(win, node, 0);
 				}
+				else if(strcmp(strtrim(ev->text), "Parent") == 0)
+				{
+					if((s = getparentname(node)) != NULL)
+					{
+						nodep = getnode(s, NULL, PARENT);
+						free(s);
+						freenode(node);
+						node = nodep;
+						redraw(win, node, 0);
+					}
+				}
 				else
 					winwriteevent(win, ev);
 				break;
@@ -496,13 +552,12 @@ runeventloop(Node* node)
 				if(findnode(node, &loc, ev->q0))
 				{
 					/* Change root directory */
-					if(S_ISDIR(loc->stat->st_mode))
+					if(canopen(loc->stat))
 					{
-						nodep = node;
 						if(realpath(loc->name, fpath) != NULL)
 						{
+							freenode(node);
 							node = getnode(fpath, NULL, PARENT);
-							freenode(nodep);
 							redraw(win, node, loc->noff);
 							winname(win, "%s/+adir", node->name);
 						}
@@ -516,7 +571,7 @@ runeventloop(Node* node)
 				if(findnode(node, &loc, ev->q0))
 				{
 					/* Fold/unfold directories */
-					if(S_ISDIR(loc->stat->st_mode))
+					if(canopen(loc->stat))
 					{
 						loc->isfolded = !loc->isfolded;
 						if(loc->nchildren < 0)
