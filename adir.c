@@ -46,27 +46,29 @@ char* path;
 char* plan9;
 char* acmeshell;
 
-void   initenv(char*);
-Node*  getnode(char*, Node*, int);
-int    nchildren(Node*);
-Node** getchildren(Node*);
-int    winclear(Win*);
-int    writenode(Node*, Win*, int, int);
-void   runeventloop(Node*);
-char*  strtrim(char*);
-Node*  refreshnode(Node*);
-void   freenode(Node*);
-int    findnode(Node*, Node**, int);
-void   runcommand(char*, char*, ...);
-void   redraw(Win*, Node*, int);
-void   togglehidden(Node*);
-void   togglefull(Node*);
 int    alphabetise(const void*, const void*);
-void   loctoq(Event*, int*);
 int    canopen(struct stat*);
+int    findnode(Node*, Node**, int);
+void   freenode(Node*);
+Node** getchildren(Node*);
+Node*  getnode(char*, Node*, int);
 char*  getparentname(Node*);
 char*  getwinname(Win*);
+void   initenv(char*);
+int    ischildshown(Node*, int);
+void   loctoq(Event*, int*);
+int    nchildren(Node*);
+void   runeventloop(Node*);
+Node*  refreshnode(Node*);
+void   runcommand(char*, char*, ...);
+void   redraw(Win*, Node*, int);
+char*  strtrim(char*);
+void   togglehidden(Node*);
+void   togglefull(Node*);
+int    winclear(Win*);
+int    writenode(Node*, Win*, int, int);
 
+#define strsize(s) ((strlen(s) + 1) * sizeof(char))
 
 /* Libthread's alternative entry to main */
 void
@@ -95,7 +97,7 @@ initenv(char *cwd)
 		acmeshell = "rc";
 	if((path = getenv("PATH")) == NULL)
 		sysfatal("PLAN9 not defined");
-	s = emalloc((strlen(cwd) + strlen(path) + 2) * sizeof(char));
+	s = emalloc(strsize(cwd) + strsize(path));
 	sprintf(s, "%s:%s", path, cwd);
 	if((setenv("PATH", s, TRUE)) < 0)
 		sysfatal("Unable to set PATH");
@@ -132,12 +134,12 @@ getnode(char* name, Node* parent, int flag)
 	node = emalloc(sizeof(Node));
 	if(parent)
 	{
-		node->name = emalloc((strlen(name)+strlen(parent->name) + 3)*sizeof(char));
+		node->name = emalloc(strsize(name) + strsize(parent->name));
 		sprintf(node->name, "%s/%s", parent->name, name);
 	}
 	else
 	{
-		node->name = emalloc((strlen(name)+1)*sizeof(char));
+		node->name = emalloc(strsize(name));
 		strcpy(node->name, name);
 	}
 	node->parent = parent;
@@ -239,6 +241,15 @@ redraw(Win* win, Node* node, int offset)
 	winctl(win, "dot=addr\nshow\nclean\n");
 }
 
+int
+ischildshown(Node *node, int i)
+{
+	char c;
+	
+	c = basename(node->children[i]->name)[0];
+	return !(node->ishidden && c == '.');
+}
+
 int 
 writenode(Node* node, Win* win, int depth, int noff)
 {
@@ -258,7 +269,7 @@ writenode(Node* node, Win* win, int depth, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				if(!(node->ishidden && basename(node->children[i]->name)[0] == '.') && depth <= MAX_DEPTH)
+				if(ischildshown(node, i) && depth <= MAX_DEPTH)
 				{
 					for(j = depth; j > 0; j--)
 						n += winprint(win, "body", "\t");
@@ -335,11 +346,9 @@ findnode(Node* node, Node** found, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				if(!(node->ishidden && basename(node->children[i]->name)[0] == '.'))
-				{
-					if(findnode(node->children[i], found, noff))
-						return TRUE;
-				}
+				if(ischildshown(node, i) 
+					&& findnode(node->children[i], found, noff))
+					return TRUE;
 			}
 		}
 	}
@@ -433,18 +442,20 @@ getparentname(Node *node)
 char*
 getwinname(Win* win)
 {
-	char *name, *s;
+	char *tag, *s;
 	
 	winseek(win, "tag", 0, 0);
-	s = winmread(win, "tag");
-	name = emalloc(sizeof(s));
-	if(sscanf(s, "%s/+adir %*s", name) <= 0)
+	tag = winmread(win, "tag");
+	if((s = strstr(tag, "/+adir")))
 	{
-		free(name);
-		name = NULL;
+		s[0] = '\0';
 	}
-	free(s);
-	return name;
+	else
+	{
+		free(tag);
+		tag = NULL;
+	}
+	return tag;
 }
 
 void
@@ -497,7 +508,13 @@ runeventloop(Node* node)
 					}
 					else
 					{
-						node = refreshnode(node);
+						if(s = getwinname(win))
+						{
+							freenode(node);
+							node = getnode(s, NULL, PARENT);
+						}
+						else
+							node = refreshnode(node);
 						redraw(win, node, 0);
 					}
 				}
