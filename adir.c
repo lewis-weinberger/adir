@@ -603,8 +603,6 @@ runeventloop(Node* node)
 						winname(win, "%s/+adir", loc->parent->name);
 						winwriteevent(win, ev);
 						winname(win, "%s/+adir", node->name);
-						/* Todo: figure out why this isn't working... */
-						/* probably an issue with synchronisation */
 					}
 				}
 				break;
