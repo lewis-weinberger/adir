@@ -1,17 +1,13 @@
+#include <u.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
-
-/* POSIX */
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <libgen.h>
-
-/* p9p */
-#include <u.h>
 #include <libc.h>
 #include <thread.h>
 #include <9pclient.h>
