@@ -31,8 +31,16 @@ struct Node
 enum
 {
 	MAX_DEPTH = 8, /* Maximum number of unfolded nested directories */
+};
+
+enum
+{
 	CHILD = 0,
 	PARENT = 1,
+};
+
+enum
+{
 	FALSE = 0,
 	TRUE = 1,
 };
@@ -72,9 +80,9 @@ threadmain(int argc, char *argv[])
 {
 	char cwd[PATH_MAX];
 	Node* tree;
-	
+
 	if(getcwd(cwd, sizeof(cwd)) == NULL)
-		sysfatal("Unable to getcwd()");	
+		sysfatal("Unable to getcwd()");
 	initenv(cwd);
 	tree = getnode(cwd, NULL, PARENT);
 	runeventloop(tree);
@@ -86,7 +94,7 @@ void
 initenv(char *cwd)
 {
 	char* s;
-	
+
 	if((plan9 = getenv("PLAN9")) == NULL)
 		sysfatal("PLAN9 not defined");
 	if((acmeshell = getenv("acmeshell")) == NULL)
@@ -105,10 +113,10 @@ canopen(struct stat *s)
 {
 	uid_t uid;
 	gid_t gid;
-	
+
 	uid = getuid();
 	gid = getgid();
-	
+
 	if(S_ISDIR(s->st_mode))
 	{
 		if(s->st_uid == uid)
@@ -122,11 +130,11 @@ canopen(struct stat *s)
 		return FALSE;
 }
 
-Node* 
+Node*
 getnode(char* name, Node* parent, int flag)
 {
 	Node *node;
-	
+
 	node = emalloc(sizeof(Node));
 	if(parent)
 	{
@@ -139,7 +147,7 @@ getnode(char* name, Node* parent, int flag)
 		strcpy(node->name, name);
 	}
 	node->parent = parent;
-	node->ishidden = FALSE;
+	node->ishidden = TRUE;
 	if(flag)
 		node->isfolded = FALSE; /* parents start unfolded */
 	else
@@ -167,14 +175,14 @@ nchildren(Node* node)
 {
 	int nc;
 	DIR* dir;
-	
+
 	dir = opendir(node->name);
 	if(dir == NULL)
 		sysfatal("Unable to opendir()");
 	nc = 0;
 	while(readdir(dir) != NULL)
 		nc++;
-	closedir(dir);	
+	closedir(dir);
 	return nc;
 }
 
@@ -185,7 +193,7 @@ getchildren(Node* node)
 	struct dirent* entry;
 	DIR* dir;
 	int i;
-	
+
 	children = emalloc(node->nchildren * sizeof(Node*));
  	dir = opendir(node->name);
 	if(dir == NULL)
@@ -207,20 +215,23 @@ int
 alphabetise(const void *a, const void *b)
 {
 	Node *x, *y;
+	char xbase[PATH_MAX], ybase[PATH_MAX];
 
 	x = *(Node**)a;
 	y = *(Node**)b;
+	strcpy(xbase, x->name);
+	strcpy(ybase, y->name);
 	/* Note: by definition, UTF-8 strings are correctly    */
 	/* ordered by strcmp(). However without normalisation, */
 	/* accented characters may appear out of order.        */
-	return strcmp(basename(x->name), basename(y->name));
+	return strcmp(xbase, ybase);
 }
 
 int
 winclear(Win* win)
 {
 	int n;
-	
+
 	n = winaddr(win, ",");
 	if(n <= 0)
 		return -1;
@@ -241,12 +252,12 @@ int
 ischildshown(Node *node, int i)
 {
 	char c;
-	
+
 	c = basename(node->children[i]->name)[0];
 	return !(node->ishidden && c == '.');
 }
 
-int 
+int
 writenode(Node* node, Win* win, int depth, int noff)
 {
 	int i, j, n;
@@ -285,7 +296,7 @@ char*
 strtrim(char* str)
 {
 	char* end;
-	
+
 	while(isspace((unsigned char)*str))
 		str++;
 	if(*str == 0)
@@ -301,7 +312,7 @@ void
 freenode(Node* node)
 {
 	int i;
-	
+
 	free(node->name);
 	if(node->nchildren > 0)
 	{
@@ -342,7 +353,7 @@ findnode(Node* node, Node** found, int noff)
 		{
 			for(i = 0; i < node->nchildren; i++)
 			{
-				if(ischildshown(node, i) 
+				if(ischildshown(node, i)
 					&& findnode(node->children[i], found, noff))
 					return TRUE;
 			}
@@ -397,7 +408,7 @@ void runcommand(char* dir, char* fmt, ...)
 	va_start(arg, fmt);
 	cmd = evsmprint(fmt, arg);
 	va_end(arg);
-	
+
 	args[0] = acmeshell;
 	args[1] = "-c";
 	args[2] = cmd;
@@ -414,7 +425,7 @@ loctoq(Event* ev, int* q)
 {
 	char* s1;
 	char* s2;
-	
+
 	s1 = ev->loc;
 	while(*s1 != ':')
 		s1++;
@@ -429,7 +440,7 @@ char*
 getparentname(Node *node)
 {
 	char fpath[PATH_MAX], *s;
-	
+
 	sprintf(fpath, "%s/..", node->name);
 	s = emalloc(sizeof(fpath));
 	return realpath(fpath, s);
@@ -439,7 +450,7 @@ char*
 getwinname(Win* win)
 {
 	char *tag, *s;
-	
+
 	winseek(win, "tag", 0, 0);
 	tag = winmread(win, "tag");
 	if((s = strstr(tag, "/+adir")))
@@ -462,25 +473,25 @@ runeventloop(Node* node)
 	Node *loc, *nodep;
 	int q[2], i;
 	char fpath[PATH_MAX], *s;
-	
+
 	win = newwin();
 	winname(win, "%s/+adir", node->name);
 	winprint(win, "tag", "Get Win New Hide Full Parent");
 	redraw(win, node, 0);
 	ev = emalloc(sizeof(Event));
-	
+
 	for(;;)
 	{
 		if(winreadevent(win, ev) <= 0)
 			break;
-			
+
 		switch(ev->c2)
 		{
 			case 'x': /* M2 in tag */
 				if(strcmp(strtrim(ev->text), "Del") == 0)
 				{
 					goto Exit;
-				} 
+				}
 				else if(strcmp(strtrim(ev->text), "Get") == 0)
 				{
 					if(ev->flag&8) /* M2+M1 chording */
@@ -560,7 +571,7 @@ runeventloop(Node* node)
 				else
 					winwriteevent(win, ev);
 				break;
-						
+
 			case 'X': /* M2 in body */
 				if(findnode(node, &loc, ev->q0))
 				{
@@ -579,7 +590,7 @@ runeventloop(Node* node)
 						winwriteevent(win, ev);
 				}
 				break;
-				
+
 			case 'L': /* M3 in body */
 				if(findnode(node, &loc, ev->q0))
 				{
@@ -602,12 +613,12 @@ runeventloop(Node* node)
 					}
 				}
 				break;
-				
+
 			default:
 				winwriteevent(win, ev);
-		}	
+		}
 	}
-		
+
 	Exit:
 		windel(win, 1);
 		winfree(win);
